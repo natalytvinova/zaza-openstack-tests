@@ -15,15 +15,16 @@
 """Code for configuring OVN."""
 
 import zaza.charm_lifecycle.utils
-import zaza.openstack.vault.setup
+import zaza.openstack.charm_tests.vault.setup as vault_setup
 
 
 def initialize_vault():
     """Initialize vault and wait for OVN charms to pick up cert and idle."""
-    zaza.openstack.vault.setup.auto_initialize(validation_application=None)
+    vault_setup.auto_initialize(validation_application=None)
 
     # Our expected workload status will change after we have successfully
     # joined the certificates relation
     test_config = zaza.charm_lifecycle.utils.get_charm_config()
     del test_config['target_deploy_status']['ovn']
     zaza.model.wait_for_agent_status()
+    zaza.model.wait_for_application_states()
