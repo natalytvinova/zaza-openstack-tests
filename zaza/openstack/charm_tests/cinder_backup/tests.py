@@ -15,7 +15,6 @@
 # limitations under the License.
 
 """Encapsulate cinder-backup testing."""
-import time
 import logging
 
 import zaza.model
@@ -88,15 +87,28 @@ class CinderBackupTest(test_utils.OpenStackBaseTest):
         self.assertEqual(pool_name, expected_pool)
 
         # Create ceph-backed cinder volume
-        cinder_vol = openstack_utils.create_volume(
-            self.cinder_client,
+        cinder_vol = self.cinder_client.volumes.create(
             name='{}-410-vol'.format(self.RESOURCE_PREFIX),
             size=1)
+        openstack_utils.resource_reaches_status(
+            self.cinder_client.volumes,
+            cinder_vol.id,
+            wait_iteration_max_time=180,
+            stop_after_attempt=15,
+            expected_status='available',
+            msg='Volume status wait')
+
         # Backup the volume
-        vol_backup = openstack_utils.create_volume_backup(
-            self.cinder_client,
+        vol_backup = self.cinder_client.backups.create(
             cinder_vol.id,
             name='{}-410-backup-vol'.format(self.RESOURCE_PREFIX))
+        openstack_utils.resource_reaches_status(
+            self.cinder_client.backups,
+            vol_backup.id,
+            wait_iteration_max_time=180,
+            stop_after_attempt=15,
+            expected_status='available',
+            msg='Volume status wait')
         # Delete the volume
         openstack_utils.delete_volume(self.cinder_client, cinder_vol.id)
         # Restore the volume
@@ -104,6 +116,8 @@ class CinderBackupTest(test_utils.OpenStackBaseTest):
         openstack_utils.resource_reaches_status(
             self.cinder_client.backups,
             vol_backup.id,
+            wait_iteration_max_time=180,
+            stop_after_attempt=15,
             expected_status='available',
             msg='Backup status wait')
         # Delete the backup
@@ -111,8 +125,10 @@ class CinderBackupTest(test_utils.OpenStackBaseTest):
             self.cinder_client,
             vol_backup.id)
         openstack_utils.resource_removed(
-            self.cinder_client.volumes,
+            self.cinder_client.backups,
             vol_backup.id,
+            wait_iteration_max_time=180,
+            stop_after_attempt=15,
             msg="Backup volume")
 
         # Re-check ceph cinder pool object count and disk usage
@@ -149,10 +165,11 @@ class CinderBackupTest(test_utils.OpenStackBaseTest):
         openstack_utils.resource_removed(
             self.cinder_client.volumes,
             cinder_vol.id,
+            wait_iteration_max_time=180,
+            stop_after_attempt=15,
             msg="Volume")
 
         # Final check, ceph cinder pool object count and disk usage
-        time.sleep(10)
         logging.info('Checking ceph cinder pool after volume delete...')
         pool_name, obj_count, kb_used = ceph_utils.get_ceph_pool_sample(
             unit_name, cinder_ceph_pool, self.model_name)
@@ -175,18 +192,3 @@ class CinderBackupTest(test_utils.OpenStackBaseTest):
                              pool_size_samples[original])
             self.assertFalse(pool_size_samples[deleted] >=
                              pool_size_samples[created])
-
-    def test_901_pause_resume(self):
-        """Run pause and resume tests.
-
-        Pause service and check services are stopped then resume and check
-        they are started
-        """
-        services = ['cinder-scheduler', 'cinder-volume']
-        if (openstack_utils.get_os_release() >=
-                openstack_utils.get_os_release('xenial_ocata')):
-            services.append('apache2')
-        else:
-            services.append('cinder-api')
-        with self.pause_resume(services):
-            logging.info("Testing pause resume")
